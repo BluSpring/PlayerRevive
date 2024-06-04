@@ -43,6 +43,15 @@ repositories {
             includeGroup("com.jamieswhiteshirt")
         }
     }
+    repositories {
+        maven {
+            url "https://cursemaven.com"
+            content {
+                includeGroup "curse.maven"
+            }
+        }
+    }
+
 }
 
 dependencies {
@@ -55,8 +64,8 @@ dependencies {
 
     // Fabric API. This is technically optional, but you probably want it anyway.
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-    
-    modImplementation(name: "CreativeCore_FABRIC_V2.11.27_mc1.20.1", ext: "jar")
+
+    modImplementation "curse.maven:creativecore-257814:5342971"
 
     def portingLibs = ["asm", "accessors", "attributes", "base", "client_events", "common", "core", "config", "data", "entity", "extensions", "items", "mixin_extensions", "networking", "utility" ]
     for (lib in portingLibs) {
