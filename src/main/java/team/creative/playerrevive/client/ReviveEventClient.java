@@ -1,35 +1,35 @@
 package team.creative.playerrevive.client;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
-
 import com.mojang.blaze3d.systems.RenderSystem;
-
+import io.github.fabricators_of_create.porting_lib.entity.events.PlayerTickEvents;
+import io.github.fabricators_of_create.porting_lib.event.client.InteractEvents;
+import io.github.fabricators_of_create.porting_lib.event.client.OverlayRenderCallback;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.client.event.InputEvent.InteractionKeyMappingTriggered;
-import net.minecraftforge.client.event.RenderGuiOverlayEvent;
-import net.minecraftforge.event.TickEvent.ClientTickEvent;
-import net.minecraftforge.event.TickEvent.Phase;
-import net.minecraftforge.event.TickEvent.PlayerTickEvent;
-import net.minecraftforge.eventbus.api.EventPriority;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
 import team.creative.playerrevive.PlayerRevive;
 import team.creative.playerrevive.api.IBleeding;
+import team.creative.playerrevive.mixin.GameRendererAccessor;
+import team.creative.playerrevive.mixin.KeyMappingAccessor;
 import team.creative.playerrevive.mixin.LocalPlayerAccessor;
 import team.creative.playerrevive.mixin.MinecraftAccessor;
 import team.creative.playerrevive.packet.GiveUpPacket;
 import team.creative.playerrevive.server.PlayerReviveServer;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 
 @OnlyIn(value = Dist.CLIENT)
 public class ReviveEventClient {
@@ -67,29 +67,63 @@ public class ReviveEventClient {
     
     private boolean addedEffect = false;
     private int giveUpTimer = 0;
-    
-    @SubscribeEvent
-    public void playerTick(PlayerTickEvent event) {
-        if (event.phase == Phase.START)
-            return;
-        IBleeding revive = PlayerReviveServer.getBleeding(event.player);
-        if (revive.isBleeding())
-            event.player.setPose(Pose.SWIMMING);
+
+    public ReviveEventClient() {
+        PlayerTickEvents.END.register(player -> {
+            if (!player.level().isClientSide())
+                return;
+
+            playerTick(player);
+        });
+
+        InteractEvents.USE.register((mc1, hit, hand) -> {
+            if (click())
+                return InteractionResult.FAIL;
+
+            return InteractionResult.PASS;
+        });
+
+        InteractEvents.PICK.register((mc1, hit) -> {
+            return click();
+        });
+
+        InteractEvents.ATTACK.register((mc1, hit) -> {
+            if (click())
+                return InteractionResult.FAIL;
+
+            return InteractionResult.PASS;
+        });
+
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            clientTick();
+        });
+
+        OverlayRenderCallback.EVENT.register((guiGraphics, partialTicks, window, type) -> {
+            tick(guiGraphics);
+
+            return false;
+        });
     }
-    
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
-    public void click(InteractionKeyMappingTriggered event) {
+
+    public void playerTick(Player player) {
+        IBleeding revive = PlayerReviveServer.getBleeding(player);
+        if (revive.isBleeding())
+            player.setPose(Pose.SWIMMING);
+    }
+
+    public boolean click() {
         Player player = mc.player;
         if (player != null) {
             IBleeding revive = PlayerReviveServer.getBleeding(player);
             if (revive.isBleeding())
-                event.setCanceled(true);
+                return true;
         }
+
+        return false;
     }
-    
-    @SubscribeEvent
-    public void clientTick(ClientTickEvent event) {
-        if (event.phase == Phase.END) {
+
+    public void clientTick() {
+        //if (event.phase == Phase.END) {
             Player player = mc.player;
             if (player != null) {
                 IBleeding revive = PlayerReviveServer.getBleeding(player);
@@ -106,11 +140,10 @@ public class ReviveEventClient {
                 else
                     giveUpTimer = 0;
             }
-        }
+        //}
     }
-    
-    @SubscribeEvent
-    public void tick(RenderGuiOverlayEvent.Post event) {
+
+    public void tick(GuiGraphics guiGraphics) {
         Player player = mc.player;
         if (player != null) {
             IBleeding revive = PlayerReviveServer.getBleeding(player);
@@ -140,7 +173,7 @@ public class ReviveEventClient {
                         IBleeding bleeding = PlayerReviveServer.getBleeding(other);
                         list.add(Component.translatable("playerrevive.gui.label.time_left", formatTime(bleeding.timeLeft())));
                         list.add(Component.literal("" + bleeding.getProgress() + "/" + PlayerRevive.CONFIG.revive.requiredReviveProgress));
-                        render(event.getGuiGraphics(), list);
+                        render(guiGraphics, list);
                     }
                 }
             } else {
@@ -175,21 +208,21 @@ public class ReviveEventClient {
                 
                 if (!lastShader) {
                     if (PlayerRevive.CONFIG.bleeding.hasShaderEffect)
-                        mc.gameRenderer.loadEffect(new ResourceLocation("shaders/post/blobs2.json"));
+                        ((GameRendererAccessor) mc.gameRenderer).callLoadEffect(new ResourceLocation("shaders/post/blobs2.json"));
                     lastShader = true;
                 } else if (PlayerRevive.CONFIG.bleeding.hasShaderEffect && (mc.gameRenderer.currentEffect() == null || !mc.gameRenderer.currentEffect().getName().equals(
                     "minecraft:shaders/post/blobs2.json"))) {
-                    mc.gameRenderer.loadEffect(new ResourceLocation("shaders/post/blobs2.json"));
+                    ((GameRendererAccessor) mc.gameRenderer).callLoadEffect(new ResourceLocation("shaders/post/blobs2.json"));
                 }
                 
-                if (!mc.options.hideGui && mc.screen == null) {
+                if (!mc.options.hideGui && (mc.screen == null || mc.screen instanceof ChatScreen)) {
                     List<Component> list = new ArrayList<>();
                     IBleeding bleeding = PlayerReviveServer.getBleeding(player);
                     list.add(Component.translatable("playerrevive.gui.label.time_left", formatTime(bleeding.timeLeft())));
                     list.add(Component.literal("" + bleeding.getProgress() + "/" + PlayerRevive.CONFIG.revive.requiredReviveProgress));
-                    list.add(Component.translatable("playerrevive.gui.hold", mc.options.keyAttack.getKey().getDisplayName(),
+                    list.add(Component.translatable("playerrevive.gui.hold", ((KeyMappingAccessor) mc.options.keyAttack).getKey().getDisplayName(),
                         ((PlayerRevive.CONFIG.bleeding.giveUpSeconds * 20 - giveUpTimer) / 20) + 1));
-                    render(event.getGuiGraphics(), list);
+                    render(guiGraphics, list);
                 }
             }
             

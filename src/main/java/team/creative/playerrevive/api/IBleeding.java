@@ -1,12 +1,12 @@
 package team.creative.playerrevive.api;
 
-import java.util.List;
-
+import io.github.fabricators_of_create.porting_lib.core.util.INBTSerializable;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.player.Player;
-import net.minecraftforge.common.util.INBTSerializable;
+
+import java.util.List;
 
 public interface IBleeding extends INBTSerializable<CompoundTag> {
     

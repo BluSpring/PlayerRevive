@@ -1,0 +1,32 @@
+{
+    "schemaVersion": 1,
+    "id": "playerrevive",
+    "version": "2.0.25",
+    "name": "PlayerRevive",
+    "description": "Help your friends in need and revive them.\nPorted to Fabric by BluSpring.",
+    "authors": [
+        "BluSpring",
+        "CreativeMD"
+    ],
+    "contact": {},
+    "license": "LGPL-3.0-only",
+    "icon": "playerrevive.png",
+    "environment": "*",
+    "entrypoints": {
+        "main": [
+            "team.creative.playerrevive.PlayerRevive"
+        ],
+        "client": [
+            "team.creative.playerrevive.client.PlayerReviveClient"
+        ]
+    },
+    "mixins": [
+        "playerrevive.mixins.json"
+    ],
+    "depends": {
+        "fabricloader": ">=0.15.7",
+        "fabric": "*",
+        "minecraft": "1.20.1",
+        "creativecore": ">=2.11.27"
+    }
+}

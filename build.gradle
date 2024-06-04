@@ -1,173 +1,69 @@
 plugins {
     id 'eclipse'
     id 'idea'
-    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
-    id 'com.diffplug.eclipse.apt'
-    id 'org.spongepowered.mixin'
-    id 'com.modrinth.minotaur' version '2.+'
-    id 'com.matthewprenger.cursegradle' version '1.4+'
+    id 'fabric-loom' version '1.6-SNAPSHOT'
 }
 
 group= "team.creative" + project.mod_id
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
-project.evaluationDependsOn(":CreativeCore")
+repositories {
+    flatDir {
+        dir 'libs'
+    }
 
-minecraft {
-    mappings channel: 'official', version: "${project.property 'minecraft_version'}"
-    
-    runs {
-        client {
-            taskName "playerrevive_client"
-            workingDirectory project.file('run')
-            
-            args '--username', 'Dev####'
-			
-			arg '--mixin.config'
-            arg 'creativecore.mixins.json'
-            arg '--mixin.config'
-            arg 'creativecore.forge.mixins.json'
-            property 'forge.logging.console.level', 'debug'
+    maven {
+        url "https://maven.architectury.dev/"
+    }
+    maven {
+        name = 'ParchmentMC'
+        url = 'https://maven.parchmentmc.org'
+    }
 
-            mods {
-                creativecore {
-                    source project(':CreativeCore').sourceSets.main
-                }
-                "${mod_id}" {
-                    source sourceSets.main
-                }
-            }
-        }
+    maven {
+        name = "DevOS One"
+        url "https://mvn.devos.one/releases/"
+    }
 
-        server {
-            taskName "playerrevive_server"
-            workingDirectory project.file('run')
-            
-            arg '--mixin.config'
-            arg 'creativecore.mixins.json'
-            arg '--mixin.config'
-            arg 'creativecore.forge.mixins.json'
-			property 'forge.logging.console.level', 'debug'
+    maven {
+        name = "JitPack"
+        url "https://jitpack.io/"
+    }
 
-            mods {
-                creativecore {
-                    source project(':CreativeCore').sourceSets.main
-                }
-                "${mod_id}" {
-                    source sourceSets.main
-                }
-            }
+    maven {
+        name = "Cafeteria Dev"
+        url "https://maven.cafeteria.dev/releases/"
+    }
+
+    maven {
+        name = "JamiesWhiteShirt Dev"
+        url "https://maven.jamieswhiteshirt.com/libs-release"
+        content {
+            includeGroup("com.jamieswhiteshirt")
         }
     }
 }
 
 dependencies {
-    minecraft "net.minecraftforge:forge:${project.property 'minecraft_version'}-${project.property 'forge_version'}"
-    
-    implementation project(':CreativeCore')
-    
-    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
-}
-
-modDependencies = [
-    [ modId: "creativecore", mandatory: true, ordering: "NONE", side: "BOTH", versionRange: creativecore_version ]
-]
-
-jar {
-    duplicatesStrategy = DuplicatesStrategy.INCLUDE
-    archiveFileName.set(project.mod_name + "_FORGE_v" + project.mod_version + "_mc" + project.minecraft_version + ".jar")
-    manifest {
-        attributes([
-            "Specification-Title": project.mod_name,
-            "Specification-Vendor": "CreativeMD",
-            "Specification-Version": project.mod_version,
-            "Implementation-Title": project.mod_name,
-            "Implementation-Version"  : project.mod_version,
-            "Implementation-Vendor": "CreativeMD",
-            "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
-        ])
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.layered() {
+        officialMojangMappings()
+        //parchment("org.parchmentmc.data:parchment-1.20.1:2023.09.03@zip")
     }
-}
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-jar.finalizedBy('reobfJar')
+    // Fabric API. This is technically optional, but you probably want it anyway.
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    
+    modImplementation(name: "CreativeCore_FABRIC_V2.11.27_mc1.20.1", ext: "jar")
 
-mixin {
-    add sourceSets.main, 'playerrevive.mixin.refmap.json'
-     
-    config 'playerrevive.mixins.json'
+    def portingLibs = ["asm", "accessors", "attributes", "base", "client_events", "common", "core", "config", "data", "entity", "extensions", "items", "mixin_extensions", "networking", "utility" ]
+    for (lib in portingLibs) {
+        modImplementation(include("io.github.fabricators_of_create.Porting-Lib:$lib:${property("porting_lib_version")}"))
+    }
 }
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
-}
-
-String getChangelogText() {
-    String result = ''
-    boolean first = true
-    file('changelog.txt').readLines().find {
-        if (first) {
-            if (it.equals(project.mod_version)) {
-                first = false
-            }
-            return false
-        } else if (!it?.trim()) {
-            return true
-        } else {
-            result += "* " + it + "\n"
-            return false
-        }
-    }
-    
-    return result
-}
-
-task upload(type: GradleBuild) {
-    description 'Uploads new version to modrinth and curseforge.'
-    group = 'publishing'
-    tasks = ['modrinth', 'curseforge']
-}
-
-gradle.taskGraph.whenReady {
-    if (it.hasTask(tasks.modrinth) || it.hasTask(tasks.curseforge)) {
-        if (!getChangelogText()?.trim()) {
-            throw new GradleException('No changelog provided')
-        }
-    }
-}
-
-tasks.modrinth.enabled = System.getenv("MODRINTH_TOKEN") != null
-tasks.modrinth.group = 'publishing'
-modrinth {
-    token = System.getenv("MODRINTH_TOKEN")
-    projectId = project.mod_id
-    versionNumber = project.mod_version
-    versionType = project.release_type
-    uploadFile = jar
-    gameVersions = [ project.minecraft_version ]
-    changelog = getChangelogText()
-    loaders = [ "forge", "neoforge" ]
-    dependencies {
-        required.project "creativecore"
-    }
-}
-
-tasks.curseforge.enabled = System.getenv("CURSEFORGE_TOKEN") != null
-tasks.curseforge.group = 'publishing'
-curseforge {
-    apiKey = System.getenv("CURSEFORGE_TOKEN") != null ? System.getenv("CURSEFORGE_TOKEN") : "empty"
-    project {
-        id = project.curse_id
-        changelog = getChangelogText()
-        changelogType = "markdown"
-        addGameVersion project.minecraft_version
-        addGameVersion "Forge"
-        addGameVersion "NeoForge"
-        releaseType = project.release_type
-        mainArtifact(jar) {
-        }
-        relations {
-            requiredLibrary "creativecore"
-        }
-    }
 }

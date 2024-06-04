@@ -1,32 +1,25 @@
 package team.creative.playerrevive.server;
 
-import net.minecraft.core.Direction;
+import io.github.fabricators_of_create.porting_lib.entity.events.LivingDeathEvent;
+import io.github.fabricators_of_create.porting_lib.entity.events.PlayerTickEvents;
+import io.github.fabricators_of_create.porting_lib.entity.events.living.LivingHurtEvent;
+import net.fabricmc.fabric.api.event.Event;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraftforge.common.capabilities.Capability;
-import net.minecraftforge.common.capabilities.ICapabilityProvider;
-import net.minecraftforge.common.util.LazyOptional;
-import net.minecraftforge.event.AttachCapabilitiesEvent;
-import net.minecraftforge.event.TickEvent.Phase;
-import net.minecraftforge.event.TickEvent.PlayerTickEvent;
-import net.minecraftforge.event.entity.living.LivingDeathEvent;
-import net.minecraftforge.event.entity.living.LivingHurtEvent;
-import net.minecraftforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent;
-import net.minecraftforge.event.entity.player.PlayerInteractEvent;
-import net.minecraftforge.eventbus.api.EventPriority;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.LogicalSide;
 import team.creative.creativecore.common.config.premade.MobEffectConfig;
 import team.creative.playerrevive.PlayerRevive;
 import team.creative.playerrevive.api.IBleeding;
-import team.creative.playerrevive.cap.Bleeding;
 import team.creative.playerrevive.packet.HelperPacket;
 
 public class ReviveEventServer {
@@ -36,11 +29,37 @@ public class ReviveEventServer {
             return false;
         return PlayerRevive.CONFIG.bleedInSingleplayer || player.getServer().isPublished();
     }
-    
-    @SubscribeEvent
-    public void playerTick(PlayerTickEvent event) {
-        if (event.phase == Phase.START && event.side == LogicalSide.SERVER && isReviveActive(event.player)) {
-            Player player = event.player;
+
+    private static final ResourceLocation HIGHEST = new ResourceLocation(PlayerRevive.MODID, "high_priority");
+
+    public ReviveEventServer() {
+        PlayerTickEvents.START.register(player -> {
+            playerTick(player);
+        });
+
+        ServerPlayConnectionEvents.DISCONNECT.addPhaseOrdering(HIGHEST, Event.DEFAULT_PHASE);
+        ServerPlayConnectionEvents.DISCONNECT.register(HIGHEST, (handler, server) -> {
+            playerLeave(handler.getPlayer());
+        });
+
+
+        UseEntityCallback.EVENT.addPhaseOrdering(HIGHEST, Event.DEFAULT_PHASE);
+        UseEntityCallback.EVENT.register(HIGHEST, (player, level, hand, target, hitResult) -> {
+            return playerInteract(player, target);
+        });
+
+        LivingHurtEvent.HURT.register(event -> {
+            playerDamage(event);
+        });
+
+        LivingDeathEvent.DEATH.addPhaseOrdering(HIGHEST, Event.DEFAULT_PHASE);
+        LivingDeathEvent.DEATH.register(HIGHEST, event -> {
+            playerDied(event);
+        });
+    }
+
+    public void playerTick(Player player) {
+        if (!player.level().isClientSide() && isReviveActive(player)) {
             if (!player.isAlive())
                 return;
             IBleeding revive = PlayerReviveServer.getBleeding(player);
@@ -67,24 +86,20 @@ public class ReviveEventServer {
             }
         }
     }
-    
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
-    public void playerLeave(PlayerLoggedOutEvent event) {
-        IBleeding revive = PlayerReviveServer.getBleeding(event.getEntity());
+
+    public void playerLeave(Player player) {
+        IBleeding revive = PlayerReviveServer.getBleeding(player);
         if (revive.isBleeding())
-            PlayerReviveServer.kill(event.getEntity());
-        if (!event.getEntity().level().isClientSide)
-            PlayerReviveServer.removePlayerAsHelper(event.getEntity());
+            PlayerReviveServer.kill(player);
+        if (!player.level().isClientSide)
+            PlayerReviveServer.removePlayerAsHelper(player);
     }
-    
-    @SubscribeEvent(priority = EventPriority.HIGH)
-    public void playerInteract(PlayerInteractEvent.EntityInteract event) {
-        if (event.getTarget() instanceof Player && !event.getEntity().level().isClientSide) {
-            Player target = (Player) event.getTarget();
-            Player helper = event.getEntity();
+
+    public InteractionResult playerInteract(Player player, Entity entityTarget) {
+        if (entityTarget instanceof Player target && !player.level().isClientSide) {
+            Player helper = player;
             IBleeding revive = PlayerReviveServer.getBleeding(target);
             if (revive.isBleeding()) {
-                event.setCanceled(true);
                 if (PlayerRevive.CONFIG.revive.needReviveItem) {
                     if (PlayerRevive.CONFIG.revive.consumeReviveItem && !revive.isItemConsumed()) {
                         if (PlayerRevive.CONFIG.revive.reviveItem.is(helper.getMainHandItem())) {
@@ -96,20 +111,22 @@ public class ReviveEventServer {
                         } else {
                             if (!helper.level().isClientSide)
                                 helper.sendSystemMessage(Component.translatable("playerrevive.revive.item").append(PlayerRevive.CONFIG.revive.reviveItem.description()));
-                            return;
+                            return InteractionResult.FAIL;
                         }
                     } else if (!PlayerRevive.CONFIG.revive.reviveItem.is(helper.getMainHandItem()))
-                        return;
+                        return InteractionResult.FAIL;
                 }
                 
                 PlayerReviveServer.removePlayerAsHelper(helper);
                 revive.revivingPlayers().add(helper);
                 PlayerRevive.NETWORK.sendToClient(new HelperPacket(target.getUUID(), true), (ServerPlayer) helper);
+
+                return InteractionResult.FAIL;
             }
         }
+        return InteractionResult.PASS;
     }
-    
-    @SubscribeEvent
+
     public void playerDamage(LivingHurtEvent event) {
         if (event.getEntity() instanceof Player) {
             Player player = (Player) event.getEntity();
@@ -138,8 +155,7 @@ public class ReviveEventServer {
                 PlayerReviveServer.removePlayerAsHelper(player);
         }
     }
-    
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
+
     public void playerDied(LivingDeathEvent event) {
         if (event.getEntity() instanceof Player player && isReviveActive(event.getEntity()) && !event.getEntity().level().isClientSide) {
             if (event.getSource().type() != player.level().registryAccess().registryOrThrow(Registries.DAMAGE_TYPE).getOrThrow(
@@ -180,7 +196,7 @@ public class ReviveEventServer {
         }
     }
     
-    @SubscribeEvent
+    /*@SubscribeEvent
     public void attachCapability(AttachCapabilitiesEvent<Entity> event) {
         if (event.getObject() instanceof Player)
             event.addCapability(PlayerRevive.BLEEDING_NAME, new ICapabilityProvider() {
@@ -192,6 +208,6 @@ public class ReviveEventServer {
                     return PlayerRevive.BLEEDING.orEmpty(cap, bleed);
                 }
             });
-    }
+    }*/
     
 }

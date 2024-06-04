@@ -1,9 +1,7 @@
 package team.creative.playerrevive.cap;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
@@ -14,10 +12,31 @@ import net.minecraft.world.entity.player.Player;
 import team.creative.playerrevive.PlayerRevive;
 import team.creative.playerrevive.api.CombatTrackerClone;
 import team.creative.playerrevive.api.IBleeding;
+import team.creative.playerrevive.fabric.ForcedPoseEntity;
 import team.creative.playerrevive.packet.HelperPacket;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+
 public class Bleeding implements IBleeding {
-    
+    public static final Codec<IBleeding> CODEC = RecordCodecBuilder.create(instance ->
+        instance.group(
+            Codec.BOOL.fieldOf("bleeding")
+                .stable()
+                .forGetter(IBleeding::isBleeding),
+            Codec.FLOAT.fieldOf("progress")
+                .stable()
+                .forGetter(IBleeding::getProgress),
+            Codec.INT.fieldOf("timeLeft")
+                .stable()
+                .forGetter(IBleeding::timeLeft),
+            Codec.INT.fieldOf("downedTime")
+                .stable()
+                .forGetter(IBleeding::downedTime)
+        ).apply(instance, instance.stable(Bleeding::new))
+    );
+
     private boolean bleeding;
     private float progress;
     private int timeLeft;
@@ -30,11 +49,17 @@ public class Bleeding implements IBleeding {
     public final List<Player> revivingPlayers = new ArrayList<>();
     
     public Bleeding() {}
+    public Bleeding(boolean bleeding, float progress, int timeLeft, int downedTime) {
+        this.bleeding = bleeding;
+        this.progress = progress;
+        this.timeLeft = timeLeft;
+        this.downedTime = downedTime;
+    }
     
     @Override
     public void tick(Player player) {
         if (player.getPose() != Pose.SWIMMING)
-            player.setForcedPose(Pose.SWIMMING);
+            ((ForcedPoseEntity) player).playerRevive$setForcedPose(Pose.SWIMMING);
         for (Iterator<Player> iterator = revivingPlayers.iterator(); iterator.hasNext();) {
             Player helper = iterator.next();
             if (helper.distanceTo(player) > PlayerRevive.CONFIG.revive.maxDistance) {
@@ -81,7 +106,7 @@ public class Bleeding implements IBleeding {
     public boolean bledOut() {
         return bleeding && timeLeft <= 0;
     }
-    
+
     @Override
     public CompoundTag serializeNBT() {
         CompoundTag nbt = new CompoundTag();
