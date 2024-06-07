@@ -99,6 +99,9 @@ public class ReviveEventClient {
         });
 
         OverlayRenderCallback.EVENT.register((guiGraphics, partialTicks, window, type) -> {
+            if (type != OverlayRenderCallback.Types.CROSSHAIRS)
+                return false;
+
             tick(guiGraphics);
 
             return false;
