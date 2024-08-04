@@ -1,9 +1,11 @@
 package team.creative.playerrevive;
 
+import com.mojang.brigadier.CommandDispatcher;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.attachment.v1.AttachmentRegistry;
 import net.fabricmc.fabric.api.attachment.v1.AttachmentType;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.core.Registry;
@@ -11,7 +13,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.damagesource.DamageType;
@@ -58,8 +59,8 @@ public class PlayerRevive implements ModInitializer {
     public void onInitialize() {
         init();
         register();
-        ServerLifecycleEvents.SERVER_STARTING.register(server -> {
-            serverStarting(server);
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            registerCommands(dispatcher);
         });
     }
     
@@ -72,8 +73,8 @@ public class PlayerRevive implements ModInitializer {
         new ReviveEventServer();
     }
     
-    private void serverStarting(MinecraftServer server) {
-        server.getCommands().getDispatcher().register(Commands.literal("revive").requires(x -> x.hasPermission(2)).then(Commands.argument("players", EntityArgument
+    private void registerCommands(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("revive").requires(x -> x.hasPermission(2)).then(Commands.argument("players", EntityArgument
                 .players()).executes(x -> {
                     Collection<ServerPlayer> players = EntityArgument.getPlayers(x, "players");
                     for (ServerPlayer player : players)
